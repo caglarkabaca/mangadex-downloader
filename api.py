@@ -1,12 +1,11 @@
-import asyncio
-
 import requests
 import json
 import os
 import aiohttp
+import aiofiles
+import asyncio
 
 from rich.progress import Progress
-
 from rich.console import Console
 console = Console()
 
@@ -43,6 +42,15 @@ class Chapter:
 
     def cool_text(self) -> str:
         return f'{self.chapter} / {self.pages} pages -> {self.lang}'
+
+
+class ChapterImage:
+
+    def __init__(self, base_url, images, temp_path, i):
+        self.base_url = base_url
+        self.images = images
+        self.temp_path = temp_path
+        self.i = i
 
 
 # gets a list of manga with a string
@@ -82,27 +90,47 @@ async def chapter_list_get(manga_id: str) -> list:
     return list_chapters
 
 
+# download chapter
+async def download_image(chapter_image, session, progress, tasks, main_task):
+
+    for image in chapter_image.images:
+        url = f'{chapter_image.base_url}/{image}'
+        async with aiofiles.open(f'{chapter_image.temp_path}/{image}', 'wb') as f:
+            async with session.get(url) as resp:
+                await f.write(await resp.read())
+                progress.update(tasks[chapter_image.i], advance=1/len(chapter_image.images))
+                progress.update(main_task, advance=1)
+
+
 # download chapters
-def download_chapters(chapters: list, path: str):
+async def download_chapters(chapters: list, path: str, name: str):
+    os.mkdir(f'{path}/{name.replace(" ", "_")}')
     with Progress() as progress:
-        main_task = progress.add_task('[red]Getting all Chapters of manga ...', total=len(chapters))
-        for chapter in chapters:
-            temp_path = f'{path}/{chapter.chapter}'
-            os.mkdir(temp_path)
-            r = requests.get(f'{BASE_URL}/at-home/server/{chapter.id}')
-            data = json.loads(r.content)
+        async with aiohttp.ClientSession() as session:
+            total = 0
+            tasks = []
+            download_que = []
+            for c in chapters:
+                tasks.append(progress.add_task(f'[blue]Downloading images of chapter {c.chapter} ...', total=1))
+                total += c.pages
+            main_task = progress.add_task('[red]Getting all Chapters of manga ...', total=total)
+            for i, c in enumerate(chapters):
+                temp_path = f'{path}/{name.replace(" ", "_")}/{c.chapter}{c.lang}'
+                os.mkdir(temp_path)
+                async with session.get(f'{BASE_URL}/at-home/server/{c.id}') as resp:
+                    data = await resp.json()
 
-            base_url = data['baseUrl']
-            _hash = data['chapter']['hash']
-            data_saver = 'data-saver'
-            images = [x for x in data['chapter']['dataSaver']]
+                base_url = data['baseUrl']
+                _hash = data['chapter']['hash']
+                data_saver = 'data-saver'
+                images = [x for x in data['chapter']['dataSaver']]
 
-            sub_task = progress.add_task(f'[blue]Downloading images of chapter {chapter.chapter} ...', total=len(images))
-            for image in images:
-                url = f'{base_url}/{data_saver}/{_hash}/{image}'
-                with open(f'{temp_path}/{image}', 'wb') as f:
-                    response = requests.get(url)
-                    f.write(response.content)
-                progress.update(sub_task, advance=1)
-            progress.update(main_task, advance=1)
+                download_que.append(ChapterImage(f'{base_url}/{data_saver}/{_hash}', images, temp_path, i))
 
+            image_tasks = [download_image(chapter_image,
+                                          session,
+                                          progress,
+                                          tasks,
+                                          main_task) for chapter_image in download_que]
+
+            await asyncio.gather(*image_tasks)
