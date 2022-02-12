@@ -17,12 +17,9 @@ css = Style([
     ('disabled', 'fg:#858585 italic')   # disabled choices for select and checkbox prompts
 ])
 
-with open('.ver') as f:
-    VER = f.read()
-
 
 async def main():
-    await questionary.text(f'Thanks for choosing our Mangadex downloader... \n      v{VER}...', style=css).ask_async()
+    await questionary.text(f'Thanks for choosing our Mangadex downloader... \n      v0.2.6 ...', style=css).ask_async()
     name = await questionary.text('Name of Manga : ', style=css).ask_async()
     temp: list = api.manga_list_get(name)
     choice = await questionary.select(
