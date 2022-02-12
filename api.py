@@ -1,9 +1,14 @@
+import asyncio
+
 import requests
 import json
 import os
+import aiohttp
 
-import time
 from rich.progress import Progress
+
+from rich.console import Console
+console = Console()
 
 BASE_URL = 'https://api.mangadex.org'
 
@@ -25,14 +30,16 @@ class Chapter:
         self.volume = _volume
         self.id = _id
 
-    def get_chapter_inf(self):
-        r = requests.get(f'{BASE_URL}/chapter/{self.id}')
-        data = json.loads(r.content)['data']['attributes']
-        self.volume = data['volume']
-        self.title = data['title']
-        self.chapter = data['chapter']
-        self.lang = data['translatedLanguage']
-        self.pages = data['pages']
+    async def get_chapter_inf(self, session):
+        url = f'{BASE_URL}/chapter/{self.id}'
+        async with session.get(url) as resp:
+            data = await resp.json()
+            data = data['data']['attributes']
+            self.volume = data['volume']
+            self.title = data['title']
+            self.chapter = data['chapter']
+            self.lang = data['translatedLanguage']
+            self.pages = data['pages']
 
     def cool_text(self) -> str:
         return f'{self.chapter} / {self.pages} pages -> {self.lang}'
@@ -54,7 +61,7 @@ def manga_list_get(string: str) -> list:
 
 
 # gets a list of chapters with a given manga id
-def chapter_list_get(manga_id: str) -> list:
+async def chapter_list_get(manga_id: str) -> list:
     list_chapters = []
     r = requests.get(f'{BASE_URL}/manga/{manga_id}/aggregate')
     data = json.loads(r.content)
@@ -65,6 +72,13 @@ def chapter_list_get(manga_id: str) -> list:
             for other in chapter['others']:
                 y = Chapter(str(volume), other)
                 list_chapters.append(y)
+
+    with Progress() as progress:
+        main_task = progress.add_task('[red]Getting chapter list of given manga ...', total=len(list_chapters))
+        async with aiohttp.ClientSession() as session:
+            for chapter in list_chapters:
+                await chapter.get_chapter_inf(session)
+                progress.update(main_task, advance=1)
     return list_chapters
 
 
