@@ -21,28 +21,23 @@ class Manga:
 
 class Chapter:
 
-    def __init__(self, _volume, _id):
+    def __init__(self):
         self.title = None
         self.lang = None
         self.pages = None
         self.chapter = None
-        self.volume = _volume
-        self.id = _id
+        self.volume = None
+        self.id = None
 
-    async def get_chapter_inf(self, session, progress, main_task, semaphore):
-        url = f'{BASE_URL}/chapter/{self.id}'
-        async with semaphore:
-            async with session.get(url) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    console.log(f'status {resp.status}')
-                data = data['data']['attributes']
-                self.volume = data['volume']
-                self.title = data['title']
-                self.chapter = data['chapter']
-                self.lang = data['translatedLanguage']
-                self.pages = data['pages']
-                progress.update(main_task, advance=1)
+    async def get_chapter_inf(self, data, progress, main_task):
+        self.id = data['id']
+        data = data['attributes']
+        self.volume = data['volume']
+        self.title = data['title']
+        self.chapter = data['chapter']
+        self.lang = data['translatedLanguage']
+        self.pages = data['pages']
+        progress.update(main_task, advance=1)
 
     def cool_text(self) -> str:
         return f'{self.chapter} / {self.pages} pages -> {self.lang}'
@@ -75,23 +70,21 @@ def manga_list_get(string: str) -> list:
 # gets a list of chapters with a given manga id
 async def chapter_list_get(manga_id: str) -> list:
     list_chapters = []
-    r = requests.get(f'{BASE_URL}/manga/{manga_id}/aggregate')
+    r = requests.get(f'{BASE_URL}/chapter?manga={manga_id}')
     data = json.loads(r.content)
-    for volume in data['volumes'].values():
-        for chapter in volume['chapters'].values():
-            x = Chapter(str(volume), chapter['id'])
-            list_chapters.append(x)
-            for other in chapter['others']:
-                y = Chapter(str(volume), other)
-                list_chapters.append(y)
-
+    total = data['total']
+    times = total // 100
     with Progress() as progress:
-        main_task = progress.add_task('[red]Getting chapter list of given manga ...', total=len(list_chapters))
-        semaphore = asyncio.Semaphore(300)
-        async with aiohttp.ClientSession() as session:
-            chapter_tasks = [chapter.get_chapter_inf(session, progress, main_task, semaphore) for chapter in list_chapters]
-            await asyncio.gather(*chapter_tasks)
-
+        main_task = progress.add_task(f'[red]Getting chapter list of given manga ...', total=total)
+        for i in range(1, times + 2):
+            offset = (i-1) * 100
+            url = f'{BASE_URL}/chapter?manga={manga_id}&offset={offset}&limit=100'
+            with requests.get(url) as resp:
+                data = json.loads(resp.content)
+                for sub_data in data['data']:
+                    chapter = Chapter()
+                    await chapter.get_chapter_inf(sub_data, progress, main_task)
+                    list_chapters.append(chapter)
     return list_chapters
 
 
