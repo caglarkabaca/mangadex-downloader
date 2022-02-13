@@ -10,4 +10,4 @@ Downloads one or multiple chapters of Mangas in MangaDex
  
   Just download the exe file
   
- [use.gif](use.gif)
+ ![use.gif](use.gif)
