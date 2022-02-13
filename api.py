@@ -29,7 +29,7 @@ class Chapter:
         self.volume = _volume
         self.id = _id
 
-    async def get_chapter_inf(self, session):
+    async def get_chapter_inf(self, session, progress, main_task):
         url = f'{BASE_URL}/chapter/{self.id}'
         async with session.get(url) as resp:
             data = await resp.json()
@@ -39,6 +39,7 @@ class Chapter:
             self.chapter = data['chapter']
             self.lang = data['translatedLanguage']
             self.pages = data['pages']
+            progress.update(main_task, advance=1)
 
     def cool_text(self) -> str:
         return f'{self.chapter} / {self.pages} pages -> {self.lang}'
@@ -83,10 +84,11 @@ async def chapter_list_get(manga_id: str) -> list:
 
     with Progress() as progress:
         main_task = progress.add_task('[red]Getting chapter list of given manga ...', total=len(list_chapters))
+
         async with aiohttp.ClientSession() as session:
-            for chapter in list_chapters:
-                await chapter.get_chapter_inf(session)
-                progress.update(main_task, advance=1)
+            chapter_tasks = [chapter.get_chapter_inf(session, progress, main_task) for chapter in list_chapters]
+            await asyncio.gather(*chapter_tasks)
+
     return list_chapters
 
 
